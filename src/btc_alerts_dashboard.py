@@ -182,6 +182,7 @@ class BTCAlertDashboard:
         self.root = root
         self.root.title("Binance BTC Dashboard")
         self.root.configure(bg=COLORS['background'])
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         # self.root.geometry("800x1200")
 
         # Initialize components
@@ -204,6 +205,12 @@ class BTCAlertDashboard:
         self.status_bar = tk.Label(root, textvariable=self.status_var, bd=1, 
                                  relief=tk.SUNKEN, anchor=tk.W, bg=COLORS['background'], fg=COLORS['text'])
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+
+    def on_close(self):
+            print("on_close Called")
+            self.ws.running = False
+            self.ws.ws.close()
+            self.root.destroy()
 
     def setup_ui(self):
         main_frame = tk.Frame(self.root, bg=COLORS['background'])
@@ -230,6 +237,85 @@ class BTCAlertDashboard:
         
         # Timeframe panels
         self.setup_timeframe_panels(main_frame)
+
+        # Price alerts section
+        self.setup_price_alerts(main_frame)
+
+
+
+    def setup_price_alerts(self, parent):
+        alert_frame = tk.LabelFrame(
+            parent,
+            text="Price Alerts",
+            font=('Helvetica', 12, 'bold'),
+            fg=COLORS['text'],
+            bg=COLORS['background'],
+            bd=2,
+            relief='ridge',
+            padx=10,
+            pady=10
+        )
+        alert_frame.pack(fill='x', pady=10)
+
+        self.price_alert_entries = []
+        
+        entry_frame = tk.Frame(alert_frame, bg=COLORS['background'])
+        entry_frame.pack(fill='x', pady=5)
+
+        # Create 8 entry fields in 2 rows and 4 columns
+        for i in range(8):
+            row = i // 4
+            col = i % 4
+
+            sub_frame = tk.Frame(entry_frame, bg=COLORS['background'])
+            sub_frame.grid(row=row, column=col, padx=8, pady=5)
+
+            var = tk.StringVar()
+            entry = tk.Entry(
+                sub_frame,
+                width=10,
+                textvariable=var,
+                bg=COLORS['background'],
+                fg=COLORS['text'],
+                insertbackground=COLORS['text'],
+                highlightbackground=COLORS['accent'],
+                highlightthickness=1
+            )
+            entry.pack()
+            self.price_alert_entries.append(var)
+
+        # Button to set alerts
+        btn_frame = tk.Frame(alert_frame, bg=COLORS['background'])
+        btn_frame.pack(fill='x', pady=5)
+
+        set_btn = tk.Button(
+            btn_frame,
+            text="Set All Alerts",
+            command=self.set_price_alerts,
+            bg=COLORS['accent'],
+            fg='black',
+            font=('Helvetica', 10, 'bold'),
+            relief='raised',
+            padx=5,
+            pady=2
+        )
+        set_btn.pack(pady=5)
+
+    def set_price_alerts(self):
+        self.active_price_alerts = []
+        for entry in self.price_alert_entries:
+            price_str = entry.get()
+            if price_str:
+                try:
+                    price = float(price_str)
+                    self.active_price_alerts.append(price)
+                    entry.set("")  # Clear the input field
+                except ValueError:
+                    messagebox.showerror("Error", f"Invalid price: {price_str}")
+        
+        if self.active_price_alerts:
+            messagebox.showinfo("Alerts Set", 
+                              f"Price alerts set at: {', '.join(map(str, self.active_price_alerts))}")
 
     def setup_alert_controls(self, parent):
         alert_frame = tk.LabelFrame(
@@ -599,14 +685,28 @@ class BTCAlertDashboard:
         if self.sltp_calculator.entry_price > 0:
             self.update_sltp_display()
         
+        # Check price alerts
+        if self.ws.current_price > 0 and hasattr(self, 'active_price_alerts'):
+            current_price = self.ws.current_price
+            for alert_price in self.active_price_alerts:
+                diff = abs(current_price - alert_price)
+                if diff <= (0.01 * current_price):  # 1% threshold
+                    self.trigger_price_alert(alert_price)
+                    self.active_price_alerts.remove(alert_price)
+
         # Update status
         self.status_var.set("Connected" if self.ws.connected else "Disconnected")
         
         # Schedule next update
         self.root.after(1000, self.update_ui)
 
+    def trigger_price_alert(self, price):
+        message = f"Price near {price:.2f}!"
+        self.alert_manager.trigger_alert(message)
+
     def log(self, message):
         print(message)
+
 
 if __name__ == "__main__":
     root = tk.Tk()
