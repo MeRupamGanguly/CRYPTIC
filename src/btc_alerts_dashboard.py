@@ -329,6 +329,9 @@ class BTCAlertDashboard:
         )
         alert_frame.pack(fill='x', pady=10)
         
+        # Dictionary to store our variables
+        self.alert_vars = {}
+        
         # Create grid for alerts
         for i, indicator in enumerate(INDICATORS):
             tk.Label(
@@ -349,20 +352,27 @@ class BTCAlertDashboard:
                         bg=COLORS['background']
                     ).grid(row=0, column=j+1, padx=5, pady=2)
                 
-                # Enable checkbox
-                var = tk.BooleanVar(value=False)
+                # Create unique key for this indicator-timeframe combo
+                var_key = f"{indicator}_{timeframe}"
+                
+                # Enable checkbox with default checked
+                self.alert_vars[var_key] = tk.BooleanVar(value=True)
+                self.alert_manager.alerts[timeframe][indicator].update({'enabled': True})
+                
                 cb = tk.Checkbutton(
                     alert_frame, 
-                    variable=var, 
-                    command=lambda tf=timeframe, ind=indicator: self.alert_manager.alerts[tf][ind].update({'enabled': var.get()}),
+                    variable=self.alert_vars[var_key], 
+                    command=lambda tf=timeframe, ind=indicator, vk=var_key: 
+                        self.alert_manager.alerts[tf][ind].update({'enabled': self.alert_vars[vk].get()}),
                     bg=COLORS['background'], 
                     fg=COLORS['text'], 
-                    selectcolor=COLORS['background']
+                    selectcolor=COLORS['background'],
+                    activebackground=COLORS['background']
                 )
                 cb.grid(row=i+1, column=j+1, padx=5, pady=2)
-                
+                                
                 # Threshold entry
-                threshold_var = tk.StringVar(value="0.5")
+                threshold_var = tk.StringVar(value="0.01")
                 entry = tk.Entry(
                     alert_frame, 
                     textvariable=threshold_var, 
@@ -373,7 +383,7 @@ class BTCAlertDashboard:
                 )
                 entry.grid(row=i+1, column=len(TIMEFRAMES)+1+j, padx=5, pady=2)
                 entry.bind('<FocusOut>', lambda e, tf=timeframe, ind=indicator, tv=threshold_var: 
-                          self.alert_manager.alerts[tf][ind].update({'threshold': float(tv.get())}))
+                        self.alert_manager.alerts[tf][ind].update({'threshold': float(tv.get())}))
 
     def setup_sltp_calculator(self, parent):
         sltp_frame = tk.LabelFrame(
@@ -658,7 +668,7 @@ class BTCAlertDashboard:
             indicators[tf]['EMA200'] = ema200.iloc[-1]
             self.indicator_vars[tf]['EMA200'].set(f"{ema200.iloc[-1]:.2f}")
             
-            # Bollinger Bands
+            # Bollinger Bands   
             bb = BollingerBands(df['close'], window=20, window_dev=2)
             indicators[tf]['BB'] = {
                 'upper': bb.bollinger_hband().iloc[-1],
@@ -690,7 +700,7 @@ class BTCAlertDashboard:
             current_price = self.ws.current_price
             for alert_price in self.active_price_alerts:
                 diff = abs(current_price - alert_price)
-                if diff <= (0.01 * current_price):  # 1% threshold
+                if diff <= (0.0001 * current_price):  # 1% threshold
                     self.trigger_price_alert(alert_price)
                     self.active_price_alerts.remove(alert_price)
 
