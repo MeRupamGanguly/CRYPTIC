@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Binance BTC Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .alert-flash {
+            animation: flash 1s infinite;
+        }
+        @keyframes flash {
+            0% { background-color: #d7ba7d; }
+            50% { background-color: #f0e0b0; }
+            100% { background-color: #d7ba7d; }
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white">
+    <div class="container mx-auto p-4">
+        <h1 class="text-3xl font-bold text-center mb-6 text-blue-400">Binance BTC Dashboard</h1>
+        
+        <!-- Status Bar -->
+        <div id="status-bar" class="bg-gray-800 p-2 mb-4 rounded">
+            <span id="status-message">Connecting...</span>
+        </div>
+        
+        <!-- Price Display -->
+        <div class="bg-gray-800 p-4 rounded-lg mb-6 flex justify-between items-center">
+            <h2 class="text-xl font-bold">BTC/USDT</h2>
+            <div id="price-display" class="text-2xl font-bold text-blue-400">--</div>
+        </div>
+        
+        <!-- Alert Controls -->
+        <div class="bg-gray-800 p-4 rounded-lg mb-6">
+            <h2 class="text-xl font-bold mb-4">Alert Controls</h2>
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead>
+                        <tr>
+                            <th class="text-left p-2">Indicator</th>
+                            {% for tf in timeframes %}
+                            <th class="p-2">{{ tf.upper() }}</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for ind in indicators %}
+                        <tr class="border-t border-gray-700">
+                            <td class="p-2">{{ ind }}</td>
+                            {% for tf in timeframes %}
+                            <td class="p-2">
+                                <div class="flex items-center justify-center">
+                                    <input type="checkbox" id="{{ ind }}_{{ tf }}_enable" 
+                                           class="mr-2 enable-checkbox" data-tf="{{ tf }}" data-ind="{{ ind }}"
+                                           onchange="updateAlert('{{ tf }}', '{{ ind }}')">
+                                    <input type="number" id="{{ ind }}_{{ tf }}_threshold" 
+                                           class="w-16 bg-gray-700 text-white p-1 rounded threshold-input"
+                                           data-tf="{{ tf }}" data-ind="{{ ind }}" value="0.5" step="0.1" min="0"
+                                           onchange="updateAlert('{{ tf }}', '{{ ind }}')">
+                                </div>
+                            </td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- SL/TP Calculator -->
+        <div class="bg-gray-800 p-4 rounded-lg mb-6">
+            <h2 class="text-xl font-bold mb-4">SL/TP Calculator</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Position Type -->
+                <div class="bg-gray-700 p-3 rounded">
+                    <label class="block mb-2">Position Type:</label>
+                    <div class="flex space-x-4">
+                        <label class="inline-flex items-center">
+                            <input type="radio" name="position_type" value="LONG" checked 
+                                   class="form-radio text-green-500">
+                            <span class="ml-2 text-green-400">LONG</span>
+                        </label>
+                        <label class="inline-flex items-center">
+                            <input type="radio" name="position_type" value="SHORT" 
+                                   class="form-radio text-red-500">
+                            <span class="ml-2 text-red-400">SHORT</span>
+                        </label>
+                    </div>
+                </div>
+                
+                <!-- Entry Price -->
+                <div class="bg-gray-700 p-3 rounded">
+                    <label for="entry_price" class="block mb-2">Entry Price:</label>
+                    <div class="flex">
+                        <input type="number" id="entry_price" step="0.01" min="0" 
+                               class="flex-1 bg-gray-600 text-white p-2 rounded-l">
+                        <button onclick="setPosition()" 
+                                class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-r">
+                            Set
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- SL Controls -->
+                <div class="bg-gray-700 p-3 rounded">
+                    <label for="sl_percent" class="block mb-2">SL %:</label>
+                    <div class="flex items-center">
+                        <input type="number" id="sl_percent" value="1.0" step="0.1" min="0" 
+                               class="flex-1 bg-gray-600 text-white p-2 rounded-l">
+                        <div class="bg-gray-600 p-2 px-4">%</div>
+                        <label class="ml-4 flex items-center">
+                            <input type="checkbox" id="trailing_sl" class="form-checkbox text-blue-400">
+                            <span class="ml-2">Trailing</span>
+                        </label>
+                    </div>
+                </div>
+                
+                <!-- TP Controls -->
+                <div class="bg-gray-700 p-3 rounded">
+                    <label for="tp_percent" class="block mb-2">TP %:</label>
+                    <div class="flex items-center">
+                        <input type="number" id="tp_percent" value="2.0" step="0.1" min="0" 
+                               class="flex-1 bg-gray-600 text-white p-2 rounded-l">
+                        <div class="bg-gray-600 p-2 px-4">%</div>
+                        <label class="ml-4 flex items-center">
+                            <input type="checkbox" id="trailing_tp" class="form-checkbox text-blue-400">
+                            <span class="ml-2">Trailing</span>
+                        </label>
+                    </div>
+                </div>
+                
+                <!-- Results -->
+                <div class="bg-gray-700 p-3 rounded col-span-1 md:col-span-2">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="bg-red-900 p-3 rounded text-center">
+                            <div class="font-bold">Stop Loss</div>
+                            <div id="sl-result">--</div>
+                        </div>
+                        <div class="bg-green-900 p-3 rounded text-center">
+                            <div class="font-bold">Take Profit</div>
+                            <div id="tp-result">--</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Price Alerts -->
+        <div class="bg-gray-800 p-4 rounded-lg mb-6">
+            <h2 class="text-xl font-bold mb-4">Price Alerts</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                {% for i in range(8) %}
+                <div class="bg-gray-700 p-2 rounded">
+                    <input type="number" id="price_alert_{{ i }}" step="0.01" min="0" 
+                           class="w-full bg-gray-600 text-white p-2 rounded mb-2 price-alert-input">
+                    <button onclick="setPriceAlert('price_alert_{{ i }}')" 
+                            class="w-full bg-purple-600 hover:bg-purple-700 text-white py-1 rounded">
+                        Set Alert
+                    </button>
+                </div>
+                {% endfor %}
+            </div>
+            <div id="active-alerts" class="bg-gray-700 p-3 rounded">
+                <div class="font-bold mb-2">Active Alerts:</div>
+                <div id="alerts-list"></div>
+            </div>
+        </div>
+        
+        <!-- Timeframe Panels -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            {% for tf in timeframes %}
+            <div class="bg-gray-800 p-4 rounded-lg">
+                <h2 class="text-xl font-bold mb-4">{{ tf.upper() }} Timeframe</h2>
+                <div id="{{ tf }}-indicators">
+                    {% for ind in indicators %}
+                    <div class="flex justify-between py-2 border-b border-gray-700">
+                        <span class="text-blue-400">{{ ind }}:</span>
+                        <span id="{{ tf }}-{{ ind }}">--</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <!-- Alerts Display -->
+        <div id="alert-container" class="fixed bottom-4 right-4 w-64 space-y-2"></div>
+    </div>
+
+    <script>
+        const socket = io();
+        
+        // Handle price updates
+        socket.on('price_update', function(data) {
+            document.getElementById('price-display').textContent = data.price;
+        });
+        
+        // Handle status updates
+        socket.on('status', function(data) {
+            document.getElementById('status-message').textContent = data.message;
+        });
+        
+        // Handle error messages
+        socket.on('error', function(data) {
+            showAlert(data.message, 'bg-red-600');
+        });
+        
+        // Handle indicator updates
+        socket.on('indicators_update', function(data) {
+            for (const tf in data.indicators) {
+                for (const ind in data.indicators[tf]) {
+                    const value = data.indicators[tf][ind];
+                    const element = document.getElementById(`${tf}-${ind}`);
+                    if (element) {
+                        if (typeof value === 'object') {
+                            // Handle BB which is an object
+                            let bbText = '';
+                            for (const band in value) {
+                                bbText += `${band}: ${value[band]} `;
+                            }
+                            element.textContent = bbText;
+                        } else {
+                            element.textContent = value;
+                        }
+                    }
+                }
+            }
+        });
+        
+        // Handle SL/TP updates
+        socket.on('sltp_update', function(data) {
+            document.getElementById('sl-result').textContent = data.sl;
+            document.getElementById('tp-result').textContent = data.tp;
+        });
+        
+        // Handle alerts
+        socket.on('alert', function(data) {
+            showAlert(data.message, 'bg-yellow-600');
+            addToAlertsList(data.message);
+        });
+        
+        // Handle price alert added
+        socket.on('price_alert_added', function(data) {
+            showAlert(`Price alert set at ${data.price}`, 'bg-purple-600');
+            addToAlertsList(`Price alert: ${data.price}`);
+        });
+        
+        // Show alert notification
+        function showAlert(message, bgClass) {
+            const alertContainer = document.getElementById('alert-container');
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `${bgClass} text-white p-3 rounded-lg shadow-lg alert-flash`;
+            alertDiv.textContent = message;
+            alertContainer.appendChild(alertDiv);
+            
+            setTimeout(() => {
+                alertDiv.classList.remove('alert-flash');
+                setTimeout(() => {
+                    alertDiv.remove();
+                }, 1000);
+            }, 5000);
+        }
+        
+        // Add to alerts list
+        function addToAlertsList(message) {
+            const alertsList = document.getElementById('alerts-list');
+            const alertItem = document.createElement('div');
+            alertItem.className = 'py-1 border-b border-gray-600';
+            alertItem.textContent = message;
+            alertsList.appendChild(alertItem);
+        }
+        
+        // Set position for SL/TP calculator
+        function setPosition() {
+            const entryPrice = parseFloat(document.getElementById('entry_price').value);
+            const positionType = document.querySelector('input[name="position_type"]:checked').value;
+            const slPercent = parseFloat(document.getElementById('sl_percent').value);
+            const tpPercent = parseFloat(document.getElementById('tp_percent').value);
+            const trailingSL = document.getElementById('trailing_sl').checked;
+            const trailingTP = document.getElementById('trailing_tp').checked;
+            
+            if (isNaN(entryPrice)) {
+                showAlert('Please enter a valid entry price', 'bg-red-600');
+                return;
+            }
+            
+            fetch('/set_position', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    entry_price: entryPrice,
+                    position_type: positionType,
+                    sl_percent: slPercent,
+                    tp_percent: tpPercent,
+                    trailing_sl: trailingSL,
+                    trailing_tp: trailingTP
+                }),
+            });
+        }
+        
+        // Update alert settings
+        function updateAlert(tf, ind) {
+            const enabled = document.getElementById(`${ind}_${tf}_enable`).checked;
+            const threshold = parseFloat(document.getElementById(`${ind}_${tf}_threshold`).value);
+            
+            fetch('/set_alert', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    timeframe: tf,
+                    indicator: ind,
+                    enabled: enabled,
+                    threshold: threshold
+                }),
+            });
+        }
+        
+        // Set price alert
+        function setPriceAlert(inputId) {
+            const input = document.getElementById(inputId);
+            const price = input.value;
+            
+            if (!price) {
+                showAlert('Please enter a price', 'bg-red-600');
+                return;
+            }
+            
+            fetch('/set_price_alert', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    price: price
+                }),
+            });
+            
+            input.value = '';
+        }
+    </script>
+</body>
+</html>
