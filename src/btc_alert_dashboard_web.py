@@ -10,7 +10,11 @@ from ta.volatility import BollingerBands
 import time
 import os
 import requests
+import os
 
+def send_local_sms(message):
+    os.system(f'termux-sms-send -n 1234567890 "{message}"')
+    
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key'
 socketio = SocketIO(app, async_mode='threading')
