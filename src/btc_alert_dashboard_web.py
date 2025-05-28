@@ -104,7 +104,7 @@ class BinanceWebSocket:
 
 class AlertManager:
     def __init__(self):
-        self.alerts = {tf: {ind: {'enabled': False, 'threshold': 0.5} 
+        self.alerts = {tf: {ind: {'enabled': True, 'threshold': 0.1} 
                       for ind in INDICATORS} for tf in TIMEFRAMES}
         self.active_alerts = set()
         self.price_alerts = []
@@ -296,7 +296,7 @@ if __name__ == '__main__':
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Binance BTC Dashboard</title>
+    <title>RUPAM BTC Dashboard</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -347,10 +347,10 @@ if __name__ == '__main__':
                                 <div class="flex items-center justify-center">
                                     <input type="checkbox" id="{{ ind }}_{{ tf }}_enable" 
                                            class="mr-2 enable-checkbox" data-tf="{{ tf }}" data-ind="{{ ind }}"
-                                           onchange="updateAlert('{{ tf }}', '{{ ind }}')">
+                                           onchange="updateAlert('{{ tf }}', '{{ ind }}')" checked>
                                     <input type="number" id="{{ ind }}_{{ tf }}_threshold" 
                                            class="w-16 bg-gray-700 text-white p-1 rounded threshold-input"
-                                           data-tf="{{ tf }}" data-ind="{{ ind }}" value="0.5" step="0.1" min="0"
+                                           data-tf="{{ tf }}" data-ind="{{ ind }}" value="0.1" step="0.1" min="0"
                                            onchange="updateAlert('{{ tf }}', '{{ ind }}')">
                                 </div>
                             </td>
@@ -636,6 +636,13 @@ if __name__ == '__main__':
             
             input.value = '';
         }
+        // Set all checkboxes to checked on page load
+        document.addEventListener('DOMContentLoaded', function() {
+        const checkboxes = document.querySelectorAll('.enable-checkbox');
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = true;
+        });
+});
     </script>
 </body>
 </html>''')

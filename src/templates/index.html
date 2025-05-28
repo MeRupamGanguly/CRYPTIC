@@ -54,10 +54,10 @@
                                 <div class="flex items-center justify-center">
                                     <input type="checkbox" id="{{ ind }}_{{ tf }}_enable" 
                                            class="mr-2 enable-checkbox" data-tf="{{ tf }}" data-ind="{{ ind }}"
-                                           onchange="updateAlert('{{ tf }}', '{{ ind }}')">
+                                           onchange="updateAlert('{{ tf }}', '{{ ind }}')" checked>
                                     <input type="number" id="{{ ind }}_{{ tf }}_threshold" 
                                            class="w-16 bg-gray-700 text-white p-1 rounded threshold-input"
-                                           data-tf="{{ tf }}" data-ind="{{ ind }}" value="0.5" step="0.1" min="0"
+                                           data-tf="{{ tf }}" data-ind="{{ ind }}" value="0.1" step="0.1" min="0"
                                            onchange="updateAlert('{{ tf }}', '{{ ind }}')">
                                 </div>
                             </td>
@@ -343,6 +343,13 @@
             
             input.value = '';
         }
+        // Set all checkboxes to checked on page load
+        document.addEventListener('DOMContentLoaded', function() {
+        const checkboxes = document.querySelectorAll('.enable-checkbox');
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = true;
+        });
+});
     </script>
 </body>
 </html>
