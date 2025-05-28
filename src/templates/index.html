@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Binance BTC Dashboard</title>
+    <title>BTC Dashboard</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -150,17 +150,13 @@
         <!-- Price Alerts -->
         <div class="bg-gray-800 p-4 rounded-lg mb-6">
             <h2 class="text-xl font-bold mb-4">Price Alerts</h2>
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                {% for i in range(8) %}
-                <div class="bg-gray-700 p-2 rounded">
-                    <input type="number" id="price_alert_{{ i }}" step="0.01" min="0" 
-                           class="w-full bg-gray-600 text-white p-2 rounded mb-2 price-alert-input">
-                    <button onclick="setPriceAlert('price_alert_{{ i }}')" 
-                            class="w-full bg-purple-600 hover:bg-purple-700 text-white py-1 rounded">
-                        Set Alert
-                    </button>
-                </div>
-                {% endfor %}
+            <div class="flex mb-4">
+                <input type="number" id="price_alert_input" step="0.01" min="0" 
+                       class="flex-1 bg-gray-600 text-white p-2 rounded-l">
+                <button onclick="setPriceAlert()" 
+                        class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-r">
+                    Set Alert
+                </button>
             </div>
             <div id="active-alerts" class="bg-gray-700 p-3 rounded">
                 <div class="font-bold mb-2">Active Alerts:</div>
@@ -292,10 +288,10 @@
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    entry_price: entryPrice,
+                    entry_price: entryPrice.toFixed(2),
                     position_type: positionType,
-                    sl_percent: slPercent,
-                    tp_percent: tpPercent,
+                    sl_percent: slPercent.toFixed(1),
+                    tp_percent: tpPercent.toFixed(1),
                     trailing_sl: trailingSL,
                     trailing_tp: trailingTP
                 }),
@@ -316,18 +312,18 @@
                     timeframe: tf,
                     indicator: ind,
                     enabled: enabled,
-                    threshold: threshold
+                    threshold: threshold.toFixed(1)
                 }),
             });
         }
         
         // Set price alert
-        function setPriceAlert(inputId) {
-            const input = document.getElementById(inputId);
-            const price = input.value;
+        function setPriceAlert() {
+            const priceInput = document.getElementById('price_alert_input');
+            const price = parseFloat(priceInput.value);
             
-            if (!price) {
-                showAlert('Please enter a price', 'bg-red-600');
+            if (isNaN(price)) {
+                showAlert('Please enter a valid price', 'bg-red-600');
                 return;
             }
             
@@ -337,19 +333,20 @@
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    price: price
+                    price: price.toFixed(2)
                 }),
             });
             
-            input.value = '';
+            priceInput.value = '';
         }
+        
         // Set all checkboxes to checked on page load
         document.addEventListener('DOMContentLoaded', function() {
-        const checkboxes = document.querySelectorAll('.enable-checkbox');
-        checkboxes.forEach(checkbox => {
-            checkbox.checked = true;
+            const checkboxes = document.querySelectorAll('.enable-checkbox');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = true;
+            });
         });
-});
     </script>
 </body>
 </html>

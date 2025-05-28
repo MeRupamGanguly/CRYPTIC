@@ -8,6 +8,7 @@ from ta.momentum import RSIIndicator
 from ta.trend import EMAIndicator
 from ta.volatility import BollingerBands
 import time
+import os
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key'
@@ -33,10 +34,10 @@ class BinanceWebSocket:
 
         def on_message(ws, message):
             data = json.loads(message)
-            price = float(data['p'])
+            price = round(float(data['p']), 2)
             self.current_price = price
             self.process_trade(price, data['T'])
-            socketio.emit('price_update', {'price': price})
+            socketio.emit('price_update', {'price': f"{price:.2f}"})
 
         def on_error(ws, error):
             socketio.emit('error', {'message': f"WebSocket error: {error}"})
@@ -77,18 +78,18 @@ class BinanceWebSocket:
     def add_candle(self, tf, ts, price):
         self.candles[tf].append({
             'time': ts,
-            'open': price,
-            'high': price,
-            'low': price,
-            'close': price
+            'open': round(price, 2),
+            'high': round(price, 2),
+            'low': round(price, 2),
+            'close': round(price, 2)
         })
         if len(self.candles[tf]) > 100:
             self.candles[tf].pop(0)
 
     def update_last_candle(self, candle, price):
-        candle['close'] = price
-        candle['high'] = max(candle['high'], price)
-        candle['low'] = min(candle['low'], price)
+        candle['close'] = round(price, 2)
+        candle['high'] = round(max(candle['high'], price), 2)
+        candle['low'] = round(min(candle['low'], price), 2)
 
     def get_seconds(self, tf):
         return {
@@ -110,7 +111,7 @@ class AlertManager:
         self.price_alerts = []
 
     def check_alerts(self, indicators):
-        current_price = binance_ws.current_price
+        current_price = round(binance_ws.current_price, 2)
         for tf in indicators:
             for name, value in indicators[tf].items():
                 if name == 'BB':
@@ -134,14 +135,16 @@ class AlertManager:
             socketio.emit('alert', {'message': message})
 
     def add_price_alert(self, price):
-        self.price_alerts.append(float(price))
-        socketio.emit('price_alert_added', {'price': price})
+        price = round(float(price), 2)
+        self.price_alerts.append(price)
+        socketio.emit('price_alert_added', {'price': f"{price:.2f}"})
 
     def check_price_alerts(self, current_price):
+        current_price = round(current_price, 2)
         for alert_price in self.price_alerts[:]:
             diff = abs(current_price - alert_price)
-            if diff <= (0.0001 * current_price):
-                self.trigger_alert(f"Price reached {alert_price}")
+            if diff <= (0.001 * current_price):  # 1 cent tolerance
+                self.trigger_alert(f"Price reached {alert_price:.2f}")
                 self.price_alerts.remove(alert_price)
 
 class SLTPCalculator:
@@ -154,18 +157,20 @@ class SLTPCalculator:
         self.trailing_tp = False
 
     def set_position(self, entry_price, position_type):
-        self.entry_price = entry_price
+        self.entry_price = round(float(entry_price), 2)
         self.position_type = position_type
 
     def calculate_sl(self, current_price):
+        current_price = round(current_price, 2)
         if self.position_type == 'LONG':
-            return self.entry_price * (1 - self.sl_percent/100)
-        return self.entry_price * (1 + self.sl_percent/100)
+            return round(self.entry_price * (1 - self.sl_percent/100), 2)
+        return round(self.entry_price * (1 + self.sl_percent/100), 2)
 
     def calculate_tp(self, current_price):
+        current_price = round(current_price, 2)
         if self.position_type == 'LONG':
-            return self.entry_price * (1 + self.tp_percent/100)
-        return self.entry_price * (1 - self.tp_percent/100)
+            return round(self.entry_price * (1 + self.tp_percent/100), 2)
+        return round(self.entry_price * (1 - self.tp_percent/100), 2)
 
 # Global instances
 binance_ws = BinanceWebSocket()
@@ -183,24 +188,24 @@ def calculate_indicators():
         
         # RSI
         rsi = RSIIndicator(df['close'], window=14).rsi()
-        indicators[tf]['RSI'] = rsi.iloc[-1]
+        indicators[tf]['RSI'] = round(rsi.iloc[-1], 2)
         
         # EMAs
         ema20 = EMAIndicator(df['close'], window=20).ema_indicator()
-        indicators[tf]['EMA20'] = ema20.iloc[-1]
+        indicators[tf]['EMA20'] = round(ema20.iloc[-1], 2)
         
         ema50 = EMAIndicator(df['close'], window=50).ema_indicator()
-        indicators[tf]['EMA50'] = ema50.iloc[-1]
+        indicators[tf]['EMA50'] = round(ema50.iloc[-1], 2)
         
         ema200 = EMAIndicator(df['close'], window=200).ema_indicator()
-        indicators[tf]['EMA200'] = ema200.iloc[-1]
+        indicators[tf]['EMA200'] = round(ema200.iloc[-1], 2)
         
         # Bollinger Bands   
         bb = BollingerBands(df['close'], window=20, window_dev=2)
         indicators[tf]['BB'] = {
-            'upper': bb.bollinger_hband().iloc[-1],
-            'middle': bb.bollinger_mavg().iloc[-1],
-            'lower': bb.bollinger_lband().iloc[-1]
+            'upper': round(bb.bollinger_hband().iloc[-1], 2),
+            'middle': round(bb.bollinger_mavg().iloc[-1], 2),
+            'lower': round(bb.bollinger_lband().iloc[-1], 2)
         }
         
     return indicators
@@ -250,8 +255,8 @@ def index():
 def set_position():
     data = request.json
     sltp_calculator.set_position(float(data['entry_price']), data['position_type'])
-    sltp_calculator.sl_percent = float(data['sl_percent'])
-    sltp_calculator.tp_percent = float(data['tp_percent'])
+    sltp_calculator.sl_percent = round(float(data['sl_percent']), 2)
+    sltp_calculator.tp_percent = round(float(data['tp_percent']), 2)
     sltp_calculator.trailing_sl = data.get('trailing_sl', False)
     sltp_calculator.trailing_tp = data.get('trailing_tp', False)
     return jsonify({'status': 'success'})
@@ -262,7 +267,7 @@ def set_alert():
     tf = data['timeframe']
     indicator = data['indicator']
     alert_manager.alerts[tf][indicator]['enabled'] = data['enabled']
-    alert_manager.alerts[tf][indicator]['threshold'] = float(data['threshold'])
+    alert_manager.alerts[tf][indicator]['threshold'] = round(float(data['threshold']), 2)
     return jsonify({'status': 'success'})
 
 @app.route('/set_price_alert', methods=['POST'])
@@ -286,7 +291,6 @@ def handle_connect():
 
 if __name__ == '__main__':
     # Create templates directory if it doesn't exist
-    import os
     os.makedirs('templates', exist_ok=True)
     
     # Create the HTML template file
@@ -296,7 +300,7 @@ if __name__ == '__main__':
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RUPAM BTC Dashboard</title>
+    <title>BTC Dashboard</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -443,17 +447,13 @@ if __name__ == '__main__':
         <!-- Price Alerts -->
         <div class="bg-gray-800 p-4 rounded-lg mb-6">
             <h2 class="text-xl font-bold mb-4">Price Alerts</h2>
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                {% for i in range(8) %}
-                <div class="bg-gray-700 p-2 rounded">
-                    <input type="number" id="price_alert_{{ i }}" step="0.01" min="0" 
-                           class="w-full bg-gray-600 text-white p-2 rounded mb-2 price-alert-input">
-                    <button onclick="setPriceAlert('price_alert_{{ i }}')" 
-                            class="w-full bg-purple-600 hover:bg-purple-700 text-white py-1 rounded">
-                        Set Alert
-                    </button>
-                </div>
-                {% endfor %}
+            <div class="flex mb-4">
+                <input type="number" id="price_alert_input" step="0.01" min="0" 
+                       class="flex-1 bg-gray-600 text-white p-2 rounded-l">
+                <button onclick="setPriceAlert()" 
+                        class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-r">
+                    Set Alert
+                </button>
             </div>
             <div id="active-alerts" class="bg-gray-700 p-3 rounded">
                 <div class="font-bold mb-2">Active Alerts:</div>
@@ -585,10 +585,10 @@ if __name__ == '__main__':
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    entry_price: entryPrice,
+                    entry_price: entryPrice.toFixed(2),
                     position_type: positionType,
-                    sl_percent: slPercent,
-                    tp_percent: tpPercent,
+                    sl_percent: slPercent.toFixed(1),
+                    tp_percent: tpPercent.toFixed(1),
                     trailing_sl: trailingSL,
                     trailing_tp: trailingTP
                 }),
@@ -609,18 +609,18 @@ if __name__ == '__main__':
                     timeframe: tf,
                     indicator: ind,
                     enabled: enabled,
-                    threshold: threshold
+                    threshold: threshold.toFixed(1)
                 }),
             });
         }
         
         // Set price alert
-        function setPriceAlert(inputId) {
-            const input = document.getElementById(inputId);
-            const price = input.value;
+        function setPriceAlert() {
+            const priceInput = document.getElementById('price_alert_input');
+            const price = parseFloat(priceInput.value);
             
-            if (!price) {
-                showAlert('Please enter a price', 'bg-red-600');
+            if (isNaN(price)) {
+                showAlert('Please enter a valid price', 'bg-red-600');
                 return;
             }
             
@@ -630,25 +630,26 @@ if __name__ == '__main__':
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    price: price
+                    price: price.toFixed(2)
                 }),
             });
             
-            input.value = '';
+            priceInput.value = '';
         }
+        
         // Set all checkboxes to checked on page load
         document.addEventListener('DOMContentLoaded', function() {
-        const checkboxes = document.querySelectorAll('.enable-checkbox');
-        checkboxes.forEach(checkbox => {
-            checkbox.checked = true;
+            const checkboxes = document.querySelectorAll('.enable-checkbox');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = true;
+            });
         });
-});
     </script>
 </body>
 </html>''')
     
-    print("Starting server on http://localhost:5000")
+    print("Starting server on http://localhost:5001")
     print("On your Android device, connect to the same network and visit:")
-    print("http://<your-computer-ip>:5000")
+    print("http://<your-computer-ip>:5001")
     
     socketio.run(app, host='0.0.0.0', port=5001)
