@@ -9,6 +9,7 @@ from ta.trend import EMAIndicator
 from ta.volatility import BollingerBands
 import time
 import os
+import requests
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key'
@@ -16,6 +17,7 @@ socketio = SocketIO(app, async_mode='threading')
 
 TIMEFRAMES = ['1m', '30m', '1h', '4h']
 INDICATORS = ['RSI', 'EMA20', 'EMA50', 'EMA200', 'BB']
+MAX_CANDLES = 250  # Keep 250 candles in memory for each timeframe
 
 class BinanceWebSocket:
     def __init__(self):
@@ -25,7 +27,43 @@ class BinanceWebSocket:
         self.lock = threading.Lock()
         self.ws = None
         self.running = True
+        # Fetch historical data on startup
+        self.fetch_historical_data()
         self.connect()
+
+    def fetch_historical_data(self):
+        """Fetch historical candle data for all timeframes"""
+        interval_map = {
+            '1m': '1m',
+            '30m': '30m',
+            '1h': '1h',
+            '4h': '4h'
+        }
+        
+        for tf in TIMEFRAMES:
+            try:
+                url = "https://api.binance.com/api/v3/klines"
+                params = {
+                    'symbol': 'BTCUSDT',
+                    'interval': interval_map[tf],
+                    'limit': MAX_CANDLES
+                }
+                
+                response = requests.get(url, params=params)
+                data = response.json()
+                self.candles[tf] = [{
+                    'time': pd.to_datetime(candle[0], unit='ms'),
+                    'open': float(candle[1]),
+                    'high': float(candle[2]),
+                    'low': float(candle[3]),
+                    'close': float(candle[4])
+                } for candle in data]
+                
+                print(f"Fetched {len(self.candles[tf])} {tf} candles from Binance")
+                
+            except Exception as e:
+                print(f"Error fetching historical data for {tf}: {e}")
+                socketio.emit('error', {'message': f"Error fetching {tf} historical data: {str(e)}"})
 
     def connect(self):
         def on_open(ws):
@@ -83,7 +121,7 @@ class BinanceWebSocket:
             'low': round(price, 2),
             'close': round(price, 2)
         })
-        if len(self.candles[tf]) > 100:
+        if len(self.candles[tf]) > MAX_CANDLES:
             self.candles[tf].pop(0)
 
     def update_last_candle(self, candle, price):
