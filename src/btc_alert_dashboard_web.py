@@ -350,7 +350,7 @@ if __name__ == '__main__':
 </head>
 <body class="bg-gray-900 text-white">
     <div class="container mx-auto p-4">
-        <h1 class="text-3xl font-bold text-center mb-6 text-blue-400">Binance BTC Dashboard</h1>
+        <h1 class="text-3xl font-bold text-center mb-6 text-blue-400">Rupam BTC Dashboard</h1>
         
         <!-- Status Bar -->
         <div id="status-bar" class="bg-gray-800 p-2 mb-4 rounded">
