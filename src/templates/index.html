@@ -187,6 +187,8 @@
 
     <script>
         const socket = io();
+        let audioCtx = null;
+        let audioUnlocked = false;
         
         // Handle price updates
         socket.on('price_update', function(data) {
@@ -243,6 +245,11 @@
             addToAlertsList(`Price alert: ${data.price}`);
         });
         
+        // Handle beep sound
+        socket.on('play_beep', function() {
+            playBeepSound();
+        });
+        
         // Show alert notification
         function showAlert(message, bgClass) {
             const alertContainer = document.getElementById('alert-container');
@@ -266,6 +273,65 @@
             alertItem.className = 'py-1 border-b border-gray-600';
             alertItem.textContent = message;
             alertsList.appendChild(alertItem);
+        }
+        
+        // Play beep sound (works on Brave Android)
+        function playBeepSound() {
+            if (!audioUnlocked) {
+                showUnlockAudioButton();
+                return;
+            }
+
+            try {
+                if (!audioCtx) {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+
+                const oscillator = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+
+                oscillator.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+
+                oscillator.type = 'sine';
+                oscillator.frequency.value = 800; // Frequency in Hz
+                gainNode.gain.value = 0.5; // Volume
+
+                oscillator.start();
+                gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 3); // Fade out
+                oscillator.stop(audioCtx.currentTime + 3); // Stop after 3 seconds
+            } catch (e) {
+                console.error("Could not play sound:", e);
+            }
+        }
+
+        // Show button to unlock audio (required for Android autoplay)
+        function showUnlockAudioButton() {
+            const existingButton = document.getElementById('unlock-audio-button');
+            if (existingButton) return;
+
+            const unlockButton = document.createElement('button');
+            unlockButton.id = 'unlock-audio-button';
+            unlockButton.textContent = '🔊 Tap to enable sound';
+            unlockButton.style.position = 'fixed';
+            unlockButton.style.bottom = '20px';
+            unlockButton.style.left = '20px';
+            unlockButton.style.zIndex = '9999';
+            unlockButton.style.padding = '10px';
+            unlockButton.style.background = '#4CAF50';
+            unlockButton.style.color = 'white';
+            unlockButton.style.border = 'none';
+            unlockButton.style.borderRadius = '5px';
+            
+            unlockButton.onclick = () => {
+                audioUnlocked = true;
+                unlockButton.remove();
+                // Initialize AudioContext after user interaction
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                playBeepSound(); // Play immediately after unlocking
+            };
+            
+            document.body.appendChild(unlockButton);
         }
         
         // Set position for SL/TP calculator

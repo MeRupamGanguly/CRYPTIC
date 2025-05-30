@@ -11,9 +11,6 @@ import time
 import os
 import requests
 
-def send_local_sms(message):
-    os.system(f'termux-sms-send -n 1234567890 "{message}"')
-
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key'
 socketio = SocketIO(app, async_mode='threading')
@@ -30,12 +27,10 @@ class BinanceWebSocket:
         self.lock = threading.Lock()
         self.ws = None
         self.running = True
-        # Fetch historical data on startup
         self.fetch_historical_data()
         self.connect()
 
     def fetch_historical_data(self):
-        """Fetch historical candle data for all timeframes"""
         interval_map = {
             '1m': '1m',
             '30m': '30m',
@@ -174,6 +169,7 @@ class AlertManager:
         if message not in self.active_alerts:
             self.active_alerts.add(message)
             socketio.emit('alert', {'message': message})
+            socketio.emit('play_beep')  # Trigger beep sound
 
     def add_price_alert(self, price):
         price = round(float(price), 2)
@@ -325,16 +321,13 @@ def handle_connect():
     else:
         socketio.emit('status', {'message': 'Connecting to Binance...'})
     
-    # Start background thread if it's not already running
     if not hasattr(app, 'background_thread_running'):
         app.background_thread_running = True
         threading.Thread(target=background_thread, daemon=True).start()
 
 if __name__ == '__main__':
-    # Create templates directory if it doesn't exist
     os.makedirs('templates', exist_ok=True)
     
-    # Create the HTML template file
     with open('templates/index.html', 'w') as f:
         f.write('''<!DOCTYPE html>
 <html lang="en">
@@ -525,6 +518,8 @@ if __name__ == '__main__':
 
     <script>
         const socket = io();
+        let audioCtx = null;
+        let audioUnlocked = false;
         
         // Handle price updates
         socket.on('price_update', function(data) {
@@ -581,6 +576,11 @@ if __name__ == '__main__':
             addToAlertsList(`Price alert: ${data.price}`);
         });
         
+        // Handle beep sound
+        socket.on('play_beep', function() {
+            playBeepSound();
+        });
+        
         // Show alert notification
         function showAlert(message, bgClass) {
             const alertContainer = document.getElementById('alert-container');
@@ -604,6 +604,65 @@ if __name__ == '__main__':
             alertItem.className = 'py-1 border-b border-gray-600';
             alertItem.textContent = message;
             alertsList.appendChild(alertItem);
+        }
+        
+        // Play beep sound (works on Brave Android)
+        function playBeepSound() {
+            if (!audioUnlocked) {
+                showUnlockAudioButton();
+                return;
+            }
+
+            try {
+                if (!audioCtx) {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+
+                const oscillator = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+
+                oscillator.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+
+                oscillator.type = 'sine';
+                oscillator.frequency.value = 800; // Frequency in Hz
+                gainNode.gain.value = 0.5; // Volume
+
+                oscillator.start();
+                gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 3); // Fade out
+                oscillator.stop(audioCtx.currentTime + 3); // Stop after 3 seconds
+            } catch (e) {
+                console.error("Could not play sound:", e);
+            }
+        }
+
+        // Show button to unlock audio (required for Android autoplay)
+        function showUnlockAudioButton() {
+            const existingButton = document.getElementById('unlock-audio-button');
+            if (existingButton) return;
+
+            const unlockButton = document.createElement('button');
+            unlockButton.id = 'unlock-audio-button';
+            unlockButton.textContent = '🔊 Tap to enable sound';
+            unlockButton.style.position = 'fixed';
+            unlockButton.style.bottom = '20px';
+            unlockButton.style.left = '20px';
+            unlockButton.style.zIndex = '9999';
+            unlockButton.style.padding = '10px';
+            unlockButton.style.background = '#4CAF50';
+            unlockButton.style.color = 'white';
+            unlockButton.style.border = 'none';
+            unlockButton.style.borderRadius = '5px';
+            
+            unlockButton.onclick = () => {
+                audioUnlocked = true;
+                unlockButton.remove();
+                // Initialize AudioContext after user interaction
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                playBeepSound(); // Play immediately after unlocking
+            };
+            
+            document.body.appendChild(unlockButton);
         }
         
         // Set position for SL/TP calculator
