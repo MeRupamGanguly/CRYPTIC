@@ -141,10 +141,41 @@ class BinanceWebSocket:
 
 class AlertManager:
     def __init__(self):
-        self.alerts = {tf: {ind: {'enabled': True, 'threshold': 0.1} 
-                      for ind in INDICATORS} for tf in TIMEFRAMES}
-        self.active_alerts = set()
-        self.price_alerts = []
+        self.alerts_file = 'alerts.json'
+        self.price_alerts_file = 'price_alerts.json'
+        self.load_alerts()
+        self.last_triggered = {}  # Track last triggered prices
+        self.alert_threshold = 0.2  # 0.2% price movement required before re-alerting
+        
+    def load_alerts(self):
+        try:
+            if os.path.exists(self.alerts_file):
+                with open(self.alerts_file, 'r') as f:
+                    self.alerts = json.load(f)
+            else:
+                self.alerts = {tf: {ind: {'enabled': True, 'threshold': 0.01} 
+                              for ind in INDICATORS} for tf in TIMEFRAMES}
+            
+            if os.path.exists(self.price_alerts_file):
+                with open(self.price_alerts_file, 'r') as f:
+                    self.price_alerts = json.load(f)
+            else:
+                self.price_alerts = []
+                
+        except Exception as e:
+            print(f"Error loading alerts: {e}")
+            self.alerts = {tf: {ind: {'enabled': True, 'threshold': 0.01} 
+                          for ind in INDICATORS} for tf in TIMEFRAMES}
+            self.price_alerts = []
+
+    def save_alerts(self):
+        try:
+            with open(self.alerts_file, 'w') as f:
+                json.dump(self.alerts, f)
+            with open(self.price_alerts_file, 'w') as f:
+                json.dump(self.price_alerts, f)
+        except Exception as e:
+            print(f"Error saving alerts: {e}")
 
     def check_alerts(self, indicators):
         current_price = round(binance_ws.current_price, 2)
@@ -155,6 +186,8 @@ class AlertManager:
                         self.check_single_alert(current_price, val, f"{tf}_{name}_{band}")
                 else:
                     self.check_single_alert(current_price, value, f"{tf}_{name}")
+        self.check_price_alerts(current_price)
+        self.save_alerts()
 
     def check_single_alert(self, price, value, key):
         tf, indicator = key.split('_', 1)
@@ -163,35 +196,56 @@ class AlertManager:
         if alert_config['enabled']:
             threshold = alert_config['threshold']
             if abs(price - value) <= (threshold / 100 * price):
-                self.trigger_alert(key)
+                if self.should_trigger_alert(key, price):
+                    self.trigger_alert(key, price)
 
-    def trigger_alert(self, message):
-        if message not in self.active_alerts:
-            self.active_alerts.add(message)
-            socketio.emit('alert', {'message': message})
-            socketio.emit('play_beep')  # Trigger beep sound
+    def should_trigger_alert(self, alert_key, current_price):
+        """Check if price has moved enough since last alert to trigger again"""
+        if alert_key not in self.last_triggered:
+            # First time alerting for this key
+            self.last_triggered[alert_key] = current_price
+            return True
+            
+        last_price = self.last_triggered[alert_key]
+        price_diff = abs(current_price - last_price)
+        price_diff_percent = (price_diff / last_price) * 100
+        
+        if price_diff_percent >= self.alert_threshold:
+            # Price has moved enough, reset tracking and allow alert
+            self.last_triggered[alert_key] = current_price
+            return True
+            
+        return False
+
+    def trigger_alert(self, message, price=None):
+        """Track the alert with current price"""
+        if price is not None:
+            self.last_triggered[message] = price
+        socketio.emit('alert', {'message': message})
+        socketio.emit('play_beep')
 
     def add_price_alert(self, price):
         price = round(float(price), 2)
-        self.price_alerts.append(price)
-        socketio.emit('price_alert_added', {'price': f"{price:.2f}"})
+        if price not in self.price_alerts:
+            self.price_alerts.append(price)
+            socketio.emit('price_alert_added', {'price': f"{price:.2f}"})
+            self.save_alerts()
 
     def check_price_alerts(self, current_price):
         current_price = round(current_price, 2)
         for alert_price in self.price_alerts[:]:
             diff = abs(current_price - alert_price)
-            if diff <= (0.001 * current_price):  # 1 cent tolerance
-                self.trigger_alert(f"Price reached {alert_price:.2f}")
-                self.price_alerts.remove(alert_price)
+            if diff <= (0.001 * current_price):  # Changed to 0.01% threshold
+                alert_key = f"Price_{alert_price:.2f}"
+                if self.should_trigger_alert(alert_key, current_price):
+                    self.trigger_alert(f"Price reached {alert_price:.2f}", current_price)
 
 class SLTPCalculator:
     def __init__(self):
         self.entry_price = 0.0
         self.position_type = 'LONG'
-        self.sl_percent = 1.0
-        self.tp_percent = 2.0
-        self.trailing_sl = False
-        self.trailing_tp = False
+        self.sl_percent = 0.15
+        self.tp_percent = 0.5
 
     def set_position(self, entry_price, position_type):
         self.entry_price = round(float(entry_price), 2)
@@ -255,11 +309,8 @@ def background_thread():
         indicators = calculate_indicators()
         
         # Check alerts
-        alert_manager.check_alerts(indicators)
-        
-        # Check price alerts
         if binance_ws.current_price > 0:
-            alert_manager.check_price_alerts(binance_ws.current_price)
+            alert_manager.check_alerts(indicators)
         
         # Update SL/TP if position is set
         if sltp_calculator.entry_price > 0:
@@ -294,8 +345,6 @@ def set_position():
     sltp_calculator.set_position(float(data['entry_price']), data['position_type'])
     sltp_calculator.sl_percent = round(float(data['sl_percent']), 2)
     sltp_calculator.tp_percent = round(float(data['tp_percent']), 2)
-    sltp_calculator.trailing_sl = data.get('trailing_sl', False)
-    sltp_calculator.trailing_tp = data.get('trailing_tp', False)
     return jsonify({'status': 'success'})
 
 @app.route('/set_alert', methods=['POST'])
@@ -305,6 +354,7 @@ def set_alert():
     indicator = data['indicator']
     alert_manager.alerts[tf][indicator]['enabled'] = data['enabled']
     alert_manager.alerts[tf][indicator]['threshold'] = round(float(data['threshold']), 2)
+    alert_manager.save_alerts()
     return jsonify({'status': 'success'})
 
 @app.route('/set_price_alert', methods=['POST'])
@@ -312,6 +362,14 @@ def set_price_alert():
     data = request.json
     alert_manager.add_price_alert(data['price'])
     return jsonify({'status': 'success'})
+
+@app.route('/get_alerts')
+def get_alerts():
+    return jsonify({'alerts': alert_manager.alerts})
+
+@app.route('/get_price_alerts')
+def get_price_alerts():
+    return jsonify(alert_manager.price_alerts)
 
 @socketio.on('connect')
 def handle_connect():
@@ -350,7 +408,7 @@ if __name__ == '__main__':
 </head>
 <body class="bg-gray-900 text-white">
     <div class="container mx-auto p-4">
-        <h1 class="text-3xl font-bold text-center mb-6 text-blue-400">Rupam BTC Dashboard</h1>
+        <h1 class="text-3xl font-bold text-center mb-6 text-blue-400">Alertio: by Rupam</h1>
         
         <!-- Status Bar -->
         <div id="status-bar" class="bg-gray-800 p-2 mb-4 rounded">
@@ -388,7 +446,7 @@ if __name__ == '__main__':
                                            onchange="updateAlert('{{ tf }}', '{{ ind }}')" checked>
                                     <input type="number" id="{{ ind }}_{{ tf }}_threshold" 
                                            class="w-16 bg-gray-700 text-white p-1 rounded threshold-input"
-                                           data-tf="{{ tf }}" data-ind="{{ ind }}" value="0.1" step="0.1" min="0"
+                                           data-tf="{{ tf }}" data-ind="{{ ind }}" value="0.01" step="0.01" min="0"
                                            onchange="updateAlert('{{ tf }}', '{{ ind }}')">
                                 </div>
                             </td>
@@ -441,10 +499,6 @@ if __name__ == '__main__':
                         <input type="number" id="sl_percent" value="1.0" step="0.1" min="0" 
                                class="flex-1 bg-gray-600 text-white p-2 rounded-l">
                         <div class="bg-gray-600 p-2 px-4">%</div>
-                        <label class="ml-4 flex items-center">
-                            <input type="checkbox" id="trailing_sl" class="form-checkbox text-blue-400">
-                            <span class="ml-2">Trailing</span>
-                        </label>
                     </div>
                 </div>
                 
@@ -455,10 +509,6 @@ if __name__ == '__main__':
                         <input type="number" id="tp_percent" value="2.0" step="0.1" min="0" 
                                class="flex-1 bg-gray-600 text-white p-2 rounded-l">
                         <div class="bg-gray-600 p-2 px-4">%</div>
-                        <label class="ml-4 flex items-center">
-                            <input type="checkbox" id="trailing_tp" class="form-checkbox text-blue-400">
-                            <span class="ml-2">Trailing</span>
-                        </label>
                     </div>
                 </div>
                 
@@ -671,8 +721,6 @@ if __name__ == '__main__':
             const positionType = document.querySelector('input[name="position_type"]:checked').value;
             const slPercent = parseFloat(document.getElementById('sl_percent').value);
             const tpPercent = parseFloat(document.getElementById('tp_percent').value);
-            const trailingSL = document.getElementById('trailing_sl').checked;
-            const trailingTP = document.getElementById('trailing_tp').checked;
             
             if (isNaN(entryPrice)) {
                 showAlert('Please enter a valid entry price', 'bg-red-600');
@@ -688,9 +736,7 @@ if __name__ == '__main__':
                     entry_price: entryPrice.toFixed(2),
                     position_type: positionType,
                     sl_percent: slPercent.toFixed(1),
-                    tp_percent: tpPercent.toFixed(1),
-                    trailing_sl: trailingSL,
-                    trailing_tp: trailingTP
+                    tp_percent: tpPercent.toFixed(1)
                 }),
             });
         }
@@ -709,7 +755,7 @@ if __name__ == '__main__':
                     timeframe: tf,
                     indicator: ind,
                     enabled: enabled,
-                    threshold: threshold.toFixed(1)
+                    threshold: threshold.toFixed(2)
                 }),
             });
         }
@@ -737,12 +783,40 @@ if __name__ == '__main__':
             priceInput.value = '';
         }
         
-        // Set all checkboxes to checked on page load
+        // On page load
         document.addEventListener('DOMContentLoaded', function() {
             const checkboxes = document.querySelectorAll('.enable-checkbox');
             checkboxes.forEach(checkbox => {
                 checkbox.checked = true;
             });
+         // Restore alert settings from server
+            fetch('/get_alerts')
+                .then(response => response.json())
+                .then(data => {
+                    for (const tf in data.alerts) {
+                        for (const ind in data.alerts[tf]) {
+                            const checkbox = document.getElementById(`${ind}_${tf}_enable`);
+                            const threshold = document.getElementById(`${ind}_${tf}_threshold`);
+                            if (checkbox && threshold) {
+                                checkbox.checked = data.alerts[tf][ind].enabled;
+                                threshold.value = data.alerts[tf][ind].threshold;
+                            }
+                        }
+                    }
+                });
+            
+            // Restore price alerts from server
+            fetch('/get_price_alerts')
+                .then(response => response.json())
+                .then(data => {
+                    const alertsList = document.getElementById('alerts-list');
+                    data.forEach(price => {
+                        const alertItem = document.createElement('div');
+                        alertItem.className = 'py-1 border-b border-gray-600';
+                        alertItem.textContent = `Price alert: ${price.toFixed(2)}`;
+                        alertsList.appendChild(alertItem);
+                    });
+                });
         });
     </script>
 </body>

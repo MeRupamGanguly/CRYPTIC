@@ -19,7 +19,7 @@
 </head>
 <body class="bg-gray-900 text-white">
     <div class="container mx-auto p-4">
-        <h1 class="text-3xl font-bold text-center mb-6 text-blue-400">Binance BTC Dashboard</h1>
+        <h1 class="text-3xl font-bold text-center mb-6 text-blue-400">Alertio: by Rupam</h1>
         
         <!-- Status Bar -->
         <div id="status-bar" class="bg-gray-800 p-2 mb-4 rounded">
@@ -57,7 +57,7 @@
                                            onchange="updateAlert('{{ tf }}', '{{ ind }}')" checked>
                                     <input type="number" id="{{ ind }}_{{ tf }}_threshold" 
                                            class="w-16 bg-gray-700 text-white p-1 rounded threshold-input"
-                                           data-tf="{{ tf }}" data-ind="{{ ind }}" value="0.1" step="0.1" min="0"
+                                           data-tf="{{ tf }}" data-ind="{{ ind }}" value="0.01" step="0.01" min="0"
                                            onchange="updateAlert('{{ tf }}', '{{ ind }}')">
                                 </div>
                             </td>
@@ -110,10 +110,6 @@
                         <input type="number" id="sl_percent" value="1.0" step="0.1" min="0" 
                                class="flex-1 bg-gray-600 text-white p-2 rounded-l">
                         <div class="bg-gray-600 p-2 px-4">%</div>
-                        <label class="ml-4 flex items-center">
-                            <input type="checkbox" id="trailing_sl" class="form-checkbox text-blue-400">
-                            <span class="ml-2">Trailing</span>
-                        </label>
                     </div>
                 </div>
                 
@@ -124,10 +120,6 @@
                         <input type="number" id="tp_percent" value="2.0" step="0.1" min="0" 
                                class="flex-1 bg-gray-600 text-white p-2 rounded-l">
                         <div class="bg-gray-600 p-2 px-4">%</div>
-                        <label class="ml-4 flex items-center">
-                            <input type="checkbox" id="trailing_tp" class="form-checkbox text-blue-400">
-                            <span class="ml-2">Trailing</span>
-                        </label>
                     </div>
                 </div>
                 
@@ -340,8 +332,6 @@
             const positionType = document.querySelector('input[name="position_type"]:checked').value;
             const slPercent = parseFloat(document.getElementById('sl_percent').value);
             const tpPercent = parseFloat(document.getElementById('tp_percent').value);
-            const trailingSL = document.getElementById('trailing_sl').checked;
-            const trailingTP = document.getElementById('trailing_tp').checked;
             
             if (isNaN(entryPrice)) {
                 showAlert('Please enter a valid entry price', 'bg-red-600');
@@ -357,9 +347,7 @@
                     entry_price: entryPrice.toFixed(2),
                     position_type: positionType,
                     sl_percent: slPercent.toFixed(1),
-                    tp_percent: tpPercent.toFixed(1),
-                    trailing_sl: trailingSL,
-                    trailing_tp: trailingTP
+                    tp_percent: tpPercent.toFixed(1)
                 }),
             });
         }
@@ -378,7 +366,7 @@
                     timeframe: tf,
                     indicator: ind,
                     enabled: enabled,
-                    threshold: threshold.toFixed(1)
+                    threshold: threshold.toFixed(2)
                 }),
             });
         }
@@ -406,12 +394,40 @@
             priceInput.value = '';
         }
         
-        // Set all checkboxes to checked on page load
+        // On page load
         document.addEventListener('DOMContentLoaded', function() {
             const checkboxes = document.querySelectorAll('.enable-checkbox');
             checkboxes.forEach(checkbox => {
                 checkbox.checked = true;
             });
+         // Restore alert settings from server
+            fetch('/get_alerts')
+                .then(response => response.json())
+                .then(data => {
+                    for (const tf in data.alerts) {
+                        for (const ind in data.alerts[tf]) {
+                            const checkbox = document.getElementById(`${ind}_${tf}_enable`);
+                            const threshold = document.getElementById(`${ind}_${tf}_threshold`);
+                            if (checkbox && threshold) {
+                                checkbox.checked = data.alerts[tf][ind].enabled;
+                                threshold.value = data.alerts[tf][ind].threshold;
+                            }
+                        }
+                    }
+                });
+            
+            // Restore price alerts from server
+            fetch('/get_price_alerts')
+                .then(response => response.json())
+                .then(data => {
+                    const alertsList = document.getElementById('alerts-list');
+                    data.forEach(price => {
+                        const alertItem = document.createElement('div');
+                        alertItem.className = 'py-1 border-b border-gray-600';
+                        alertItem.textContent = `Price alert: ${price.toFixed(2)}`;
+                        alertsList.appendChild(alertItem);
+                    });
+                });
         });
     </script>
 </body>
