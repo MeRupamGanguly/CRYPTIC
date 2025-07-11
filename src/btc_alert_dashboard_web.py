@@ -153,7 +153,7 @@ class AlertManager:
                 with open(self.alerts_file, 'r') as f:
                     self.alerts = json.load(f)
             else:
-                self.alerts = {tf: {ind: {'enabled': True, 'threshold': 0.01} 
+                self.alerts = {tf: {ind: {'enabled': True, 'threshold': 0.02} 
                               for ind in INDICATORS} for tf in TIMEFRAMES}
             
             if os.path.exists(self.price_alerts_file):
@@ -164,7 +164,7 @@ class AlertManager:
                 
         except Exception as e:
             print(f"Error loading alerts: {e}")
-            self.alerts = {tf: {ind: {'enabled': True, 'threshold': 0.01} 
+            self.alerts = {tf: {ind: {'enabled': True, 'threshold': 0.02} 
                           for ind in INDICATORS} for tf in TIMEFRAMES}
             self.price_alerts = []
 
@@ -244,8 +244,8 @@ class SLTPCalculator:
     def __init__(self):
         self.entry_price = 0.0
         self.position_type = 'LONG'
-        self.sl_percent = 0.15
-        self.tp_percent = 0.5
+        self.sl_percent = 3.8
+        self.tp_percent = 5
 
     def set_position(self, entry_price, position_type):
         self.entry_price = round(float(entry_price), 2)
@@ -446,7 +446,7 @@ if __name__ == '__main__':
                                            onchange="updateAlert('{{ tf }}', '{{ ind }}')" checked>
                                     <input type="number" id="{{ ind }}_{{ tf }}_threshold" 
                                            class="w-16 bg-gray-700 text-white p-1 rounded threshold-input"
-                                           data-tf="{{ tf }}" data-ind="{{ ind }}" value="0.01" step="0.01" min="0"
+                                           data-tf="{{ tf }}" data-ind="{{ ind }}" value="0.02" step="0.01" min="0"
                                            onchange="updateAlert('{{ tf }}', '{{ ind }}')">
                                 </div>
                             </td>
