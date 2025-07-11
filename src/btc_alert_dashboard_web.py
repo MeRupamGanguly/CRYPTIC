@@ -496,7 +496,7 @@ if __name__ == '__main__':
                 <div class="bg-gray-700 p-3 rounded">
                     <label for="sl_percent" class="block mb-2">SL %:</label>
                     <div class="flex items-center">
-                        <input type="number" id="sl_percent" value="1.0" step="0.1" min="0" 
+                        <input type="number" id="sl_percent" value="3.8" step="0.1" min="0" 
                                class="flex-1 bg-gray-600 text-white p-2 rounded-l">
                         <div class="bg-gray-600 p-2 px-4">%</div>
                     </div>
@@ -506,7 +506,7 @@ if __name__ == '__main__':
                 <div class="bg-gray-700 p-3 rounded">
                     <label for="tp_percent" class="block mb-2">TP %:</label>
                     <div class="flex items-center">
-                        <input type="number" id="tp_percent" value="2.0" step="0.1" min="0" 
+                        <input type="number" id="tp_percent" value="5.0" step="0.1" min="0" 
                                class="flex-1 bg-gray-600 text-white p-2 rounded-l">
                         <div class="bg-gray-600 p-2 px-4">%</div>
                     </div>
